@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import socket from "../../socket";
+import bgMusic from "../../assets/music/bg_music.mp3";
 
 export default class MainScene extends Phaser.Scene {
   constructor() {
@@ -59,6 +60,31 @@ export default class MainScene extends Phaser.Scene {
     this.botSeedsUsed = new Set();
 
     this.load.setCORS("anonymous");
+
+    this.load.audio("bg_music", bgMusic);
+
+    // PLAY MUSIC
+    this.load.once("complete", () => {
+      this.bgMusic = this.sound.add("bg_music", {
+        loop: true,
+        volume: 0.3,
+      });
+
+      this.bgMusic.play();
+    });
+    this.load.start();
+
+    this.events.on("shutdown", () => {
+      if (this.bgMusic) {
+        this.bgMusic.stop();
+      }
+    });
+
+    this.input.once("pointerdown", () => {
+      if (!this.bgMusic?.isPlaying) {
+        this.bgMusic.play();
+      }
+    });
 
     this.add
       .text(540, 60, "LAST CHARACTER SURVIVE", {
