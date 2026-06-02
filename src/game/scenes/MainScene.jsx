@@ -489,6 +489,13 @@ STARTING IN ${this.lobbyCountdown}`,
 
     container.username = name;
 
+    container.targetX = Phaser.Math.Between(
+      this.platform.x - this.platformWidth / 2 + 50,
+      this.platform.x + this.platformWidth / 2 - 50,
+    );
+
+    container.nextTargetTime = this.time.now + 3000;
+
     this.players.push(container);
   }
 
@@ -614,12 +621,23 @@ STARTING IN ${this.lobbyCountdown}`,
     this.players.forEach((player) => {
       if (!player.active) return;
 
-      const center = this.platform.x;
+      // ganti target setiap 3 detik
+      if (this.time.now > player.nextTargetTime) {
+        player.targetX = Phaser.Math.Between(
+          this.platform.x - this.platformWidth / 2 + 50,
+          this.platform.x + this.platformWidth / 2 - 50,
+        );
 
-      if (player.x < center - 50) {
+        player.nextTargetTime = this.time.now + 3000;
+      }
+
+      // bergerak ke target
+      if (player.x < player.targetX - 15) {
         player.body.setVelocityX(120);
-      } else if (player.x > center + 50) {
+      } else if (player.x > player.targetX + 15) {
         player.body.setVelocityX(-120);
+      } else {
+        player.body.setVelocityX(0);
       }
 
       if (player.body.blocked.down && Math.random() < 0.02) {
