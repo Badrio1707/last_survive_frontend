@@ -614,6 +614,14 @@ STARTING IN ${this.lobbyCountdown}`,
     this.players.forEach((player) => {
       if (!player.active) return;
 
+      const center = this.platform.x;
+
+      if (player.x < center - 50) {
+        player.body.setVelocityX(120);
+      } else if (player.x > center + 50) {
+        player.body.setVelocityX(-120);
+      }
+
       if (player.body.blocked.down && Math.random() < 0.02) {
         player.body.setVelocityY(-550);
       }
