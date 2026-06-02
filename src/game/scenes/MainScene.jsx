@@ -1,6 +1,5 @@
 import Phaser from "phaser";
 import socket from "../../socket";
-import bgMusic from "../../assets/music/bg_music.mp3";
 
 export default class MainScene extends Phaser.Scene {
   constructor() {
@@ -14,15 +13,13 @@ export default class MainScene extends Phaser.Scene {
 
     this.platformSpeed = 1;
 
-    this.waitingPlayers = [];
-
     this.platformWidth = 850;
 
     this.obstacles = [];
 
     this.matchStarted = false;
 
-    this.lobbyCountdown = 10;
+    this.lobbyCountdown = 3;
 
     this.maxPlayers = 15;
 
@@ -61,30 +58,7 @@ export default class MainScene extends Phaser.Scene {
 
     this.load.setCORS("anonymous");
 
-    this.load.audio("bg_music", bgMusic);
-
-    // PLAY MUSIC
-    this.load.once("complete", () => {
-      this.bgMusic = this.sound.add("bg_music", {
-        loop: true,
-        volume: 0.3,
-      });
-
-      this.bgMusic.play();
-    });
     this.load.start();
-
-    this.events.on("shutdown", () => {
-      if (this.bgMusic) {
-        this.bgMusic.stop();
-      }
-    });
-
-    this.input.once("pointerdown", () => {
-      if (!this.bgMusic?.isPlaying) {
-        this.bgMusic.play();
-      }
-    });
 
     this.add
       .text(540, 60, "LAST CHARACTER SURVIVE", {
@@ -179,42 +153,38 @@ export default class MainScene extends Phaser.Scene {
       },
     });
 
-    // SOCKET EVENTS
-    this.setupSocketEvents();
+    this.time.addEvent({
+      delay: 10000,
+      loop: true,
+      callback: () => {
+        if (!this.matchStarted) return;
+        if (this.isGameOver) return;
 
-    this.checkWinner();
-  }
+        const eventType = Phaser.Math.Between(1, 4);
 
-  setupSocketEvents() {
-    socket.off("spawn_player");
-    socket.off("chaos_mode");
-    socket.off("jump_all");
+        switch (eventType) {
+          case 1:
+            this.triggerChaosMode();
+            break;
 
-    socket.on("spawn_player", (data) => {
-      this.addPlayerToQueue(data);
-    });
+          case 2:
+            this.triggerJumpParty();
+            break;
 
-    socket.on("chaos_mode", () => {
-      this.showEvent("CHAOS MODE");
+          case 3:
+            this.triggerMeteorRain();
+            break;
 
-      for (let i = 0; i < 10; i++) {
-        this.time.delayedCall(i * 200, () => {
-          this.spawnObstacle();
-        });
-      }
-
-      this.cameras.main.shake(500, 0.01);
-    });
-
-    socket.on("jump_all", () => {
-      this.players.forEach((player) => {
-        if (player.active) {
-          player.body.setVelocityY(-700);
+          case 4:
+            this.triggerSpeedPlatform();
+            break;
         }
-      });
-
-      this.showEvent("EVERYBODY JUMP!");
+      },
     });
+
+    this.createBotLobby();
+    this.startLobbyCountdown();
+    this.checkWinner();
   }
 
   showEvent(text) {
@@ -234,40 +204,71 @@ export default class MainScene extends Phaser.Scene {
     });
   }
 
-  addPlayerToQueue(data) {
-    const { name, photo } = data;
-    // SUDAH MAIN
-    const alreadyPlaying = this.players.some((p) => p.username === name);
+  triggerChaosMode() {
+    this.showEvent("🔥 CHAOS MODE 🔥");
 
-    // SUDAH DI QUEUE
-    const alreadyQueued = this.waitingPlayers.some((p) => p.name === name);
+    this.cameras.main.shake(800, 0.01);
 
-    if (alreadyPlaying || alreadyQueued) {
-      return;
+    // hujan obstacle
+    for (let i = 0; i < 15; i++) {
+      this.time.delayedCall(i * 150, () => {
+        this.spawnObstacle();
+      });
     }
 
-    this.waitingPlayers.push({
-      name,
-      photo,
+    // semua bot loncat
+    this.players.forEach((player) => {
+      if (!player.active) return;
+
+      player.body.setVelocityY(Phaser.Math.Between(-700, -500));
     });
+  }
 
-    this.showEvent(`${name} JOINED QUEUE`);
+  triggerJumpParty() {
+    this.showEvent("🦘 JUMP PARTY");
 
-    // START COUNTDOWN
-    if (
-      this.waitingPlayers.length >= 2 &&
-      !this.matchStarted &&
-      !this.lobbyTimer
-    ) {
-      this.startLobbyCountdown();
+    this.players.forEach((player) => {
+      if (player.active) {
+        player.body.setVelocityY(-800);
+      }
+    });
+  }
+
+  triggerMeteorRain() {
+    this.showEvent("☄️ METEOR RAIN");
+
+    for (let i = 0; i < 30; i++) {
+      this.time.delayedCall(i * 100, () => {
+        this.spawnObstacle();
+      });
     }
+  }
 
-    // AUTO START FULL
-    if (this.waitingPlayers.length >= this.maxPlayers) {
-      this.startMatch();
+  triggerSpeedPlatform() {
+    this.showEvent("⚡ SPEED PLATFORM");
+
+    this.platformSpeed = 6;
+
+    this.time.delayedCall(5000, () => {
+      this.platformSpeed = 2;
+    });
+  }
+
+  createBotLobby() {
+    this.waitingPlayers = [];
+
+    for (let i = 0; i < this.maxPlayers; i++) {
+      let randomName =
+        this.botNames[Phaser.Math.Between(0, this.botNames.length - 1)];
+
+      const photo = `https://api.dicebear.com/7.x/adventurer/png?seed=${randomName}`;
+
+      this.waitingPlayers.push({
+        name: randomName,
+        photo,
+        isBot: true,
+      });
     }
-
-    this.updateLobbyText();
   }
 
   updatePlatform() {
@@ -291,18 +292,10 @@ export default class MainScene extends Phaser.Scene {
       return;
     }
 
-    if (this.waitingPlayers.length < 2) {
-      this.lobbyText.setText(
-        `WAITING FOR MORE PLAYERS
-
-${this.waitingPlayers.length}/2 MINIMUM`,
-      );
-
-      return;
-    }
-
     this.lobbyText.setText(
-      `WAITING PLAYERS: ${this.waitingPlayers.length}/${this.maxPlayers}
+      `BATTLE
+
+PLAYERS: ${this.waitingPlayers.length}
 
 STARTING IN ${this.lobbyCountdown}`,
     );
@@ -326,38 +319,8 @@ STARTING IN ${this.lobbyCountdown}`,
     this.leaderboardText.setText(text);
   }
 
-  fillWithBots() {
-    const slotsNeeded = this.maxPlayers - this.waitingPlayers.length;
-
-    if (slotsNeeded <= 0) return;
-
-    for (let i = 0; i < slotsNeeded; i++) {
-      // RANDOM NAME
-      let randomName =
-        this.botNames[Phaser.Math.Between(0, this.botNames.length - 1)];
-
-      // BIAR TIDAK DUPLIKAT
-      randomName += "_" + Phaser.Math.Between(100, 999);
-
-      // RANDOM AVATAR
-      const randomSeed = Phaser.Math.Between(1000, 999999);
-
-      const photo = `https://api.dicebear.com/7.x/adventurer/png?seed=${randomSeed}`;
-
-      this.waitingPlayers.push({
-        name: randomName,
-        photo,
-        isBot: true,
-      });
-    }
-
-    this.showEvent("BOTS JOINED");
-
-    this.updateLobbyText();
-  }
-
   startLobbyCountdown() {
-    this.lobbyCountdown = 10;
+    this.lobbyCountdown = 3;
 
     this.updateLobbyText();
 
@@ -372,7 +335,6 @@ STARTING IN ${this.lobbyCountdown}`,
         // 3 DETIK TERAKHIR AUTO FILL BOT
         if (this.lobbyCountdown === 3) {
           if (this.waitingPlayers.length < this.maxPlayers) {
-            this.fillWithBots();
           }
         }
 
@@ -593,7 +555,6 @@ STARTING IN ${this.lobbyCountdown}`,
 
     this.obstacles = [];
 
-    // DESTROY PLAYER
     this.players.forEach((player) => {
       player.label.destroy();
       player.destroy();
@@ -601,40 +562,32 @@ STARTING IN ${this.lobbyCountdown}`,
 
     this.players = [];
 
-    // RESET STATE
     this.matchStarted = false;
     this.gameStarted = false;
     this.isGameOver = false;
 
-    // RESET UI
     this.winnerText.setText("");
 
-    // RESET PLATFORM
     this.platformWidth = 850;
-
     this.platformDirection = 1;
-
     this.platformSpeed = 2;
 
     this.platform.x = 540;
-
     this.platform.body.updateFromGameObject();
 
     this.updatePlatform();
 
-    // RESET TIMER
     if (this.lobbyTimer) {
       this.lobbyTimer.remove();
       this.lobbyTimer = null;
     }
 
-    // RESET COUNTDOWN
-    this.lobbyCountdown = 10;
+    this.lobbyCountdown = 3;
 
-    // START NEXT LOBBY
-    if (this.waitingPlayers.length >= 2) {
-      this.startLobbyCountdown();
-    }
+    // BOT BARU SETIAP ROUND
+    this.createBotLobby();
+
+    this.startLobbyCountdown();
 
     this.updateLobbyText();
   }
@@ -661,17 +614,10 @@ STARTING IN ${this.lobbyCountdown}`,
     this.players.forEach((player) => {
       if (!player.active) return;
 
-      // RANDOM JUMP
-      if (player.body.blocked.down && Math.random() < 0.005) {
-        player.body.setVelocityY(-500);
+      if (player.body.blocked.down && Math.random() < 0.02) {
+        player.body.setVelocityY(-550);
       }
 
-      // RANDOM MOVE
-      if (Math.random() < 0.01) {
-        player.body.setVelocityX(Phaser.Math.Between(-120, 120));
-      }
-
-      // FALL DEATH
       if (player.y >= 1100) {
         this.killPlayer(player);
       }
